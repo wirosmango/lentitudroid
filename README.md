@@ -13,5 +13,5 @@
 и подключается к `ws://127.0.0.1:8080/ws`. Проверьте флаг адреса в `LocalServer.kt`.
 
 # Шрифт
-Используется Cascadia Code (Copyright Microsoft, github.com/microsoft/casca), 
+Используется Cascadia Code (Copyright Microsoft, github.com/microsoft/cascadia-code), 
 лицензия SIL Open Font License 1.1, текст в app/src/main/assets/licenses/OFL.txt.   
