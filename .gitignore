@@ -1,0 +1,15 @@
+*.jks
+*.keystore
+keystore.properties
+local.properties
+
+# Сборка и IDE
+*.iml
+.gradle/
+.idea/
+build/
+app/build/
+app/release/
+captures/
+.DS_Store
+.kotlin/
