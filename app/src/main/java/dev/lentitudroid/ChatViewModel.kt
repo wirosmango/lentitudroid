@@ -1,6 +1,7 @@
 package dev.lentitudroid
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _nick = MutableStateFlow("")
     val nick: StateFlow<String> = _nick.asStateFlow()
+
+    // ---- настройки (хранятся в SharedPreferences) ----
+    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    private val _theme = MutableStateFlow(AppTheme.fromId(prefs.getString("theme", null)))
+    val theme: StateFlow<AppTheme> = _theme.asStateFlow()
+
+    private val _fontSize = MutableStateFlow(prefs.getInt("font_size", 15).coerceIn(MIN_FONT, MAX_FONT))
+    val fontSize: StateFlow<Int> = _fontSize.asStateFlow()
+
+    private val _showSettings = MutableStateFlow(false)
+    val showSettings: StateFlow<Boolean> = _showSettings.asStateFlow()
+
+    fun setTheme(t: AppTheme) {
+        _theme.value = t
+        prefs.edit().putString("theme", t.id).apply()
+    }
+
+    fun cycleTheme() = setTheme(_theme.value.next())
+
+    fun setFontSize(v: Int) {
+        val n = v.coerceIn(MIN_FONT, MAX_FONT)
+        _fontSize.value = n
+        prefs.edit().putInt("font_size", n).apply()
+    }
+
+    fun openSettings() { _showSettings.value = true }
+    fun closeSettings() { _showSettings.value = false }
 
     private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
@@ -108,6 +137,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun add(line: Line) = _lines.update { it + line }
 
+    /** Обрабатывает ввод в чате: команды (/...) выполняются локально и в чат не уходят. */
+    fun submit(raw: String) {
+        val t = raw.trim()
+        if (t.isEmpty()) return
+        when {
+            t.startsWith("//") -> send(t.removePrefix("/")) // "//текст" отправит "/текст"
+            t.startsWith("/") -> runCommand(t)
+            else -> send(t)
+        }
+    }
+
+    private fun runCommand(input: String) {
+        val parts = input.drop(1).split(Regex("\\s+"), limit = 2)
+        val cmd = parts[0].lowercase()
+        val arg = parts.getOrNull(1)?.trim().orEmpty()
+        when (cmd) {
+            "settings" -> openSettings()
+            "theme" -> {
+                if (arg.isEmpty()) {
+                    cycleTheme()
+                } else {
+                    val t = AppTheme.entries.firstOrNull { it.id == arg.lowercase() }
+                    if (t == null) {
+                        add(Line.Error("нет такой темы: $arg (доступны: ${AppTheme.ids()})"))
+                        return
+                    }
+                    setTheme(t)
+                }
+                add(Line.System("тема: ${_theme.value.id}"))
+            }
+            "leave" -> disconnect()
+            "help" -> add(Line.System(
+                "/settings — настройки, /theme [имя] — сменить тему, /leave — выйти на главный экран, " +
+                    "//текст — отправить сообщение, начинающееся с /"
+            ))
+            else -> add(Line.Error("неизвестная команда: /$cmd (список: /help)"))
+        }
+    }
+
     fun send(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
@@ -117,6 +185,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnect() {
+        _showSettings.value = false
         gen++
         ws?.close(1000, null)
         ws = null
@@ -146,6 +215,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        const val MIN_FONT = 12
+        const val MAX_FONT = 22
         val NICK_RE = Regex("^[\\p{L}\\p{N}_-]+$")
     }
 }
