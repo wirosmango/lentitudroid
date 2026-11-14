@@ -1,10 +1,13 @@
 package dev.lentitudroid
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +25,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -152,7 +156,9 @@ fun MaterialChatScreen(vm: ChatViewModel) {
     val focus = remember { FocusRequester() }
     val send = { vm.submit(input); input = "" }
 
-    BackHandler { vm.disconnect() }
+    // «Назад» сворачивает приложение, не разрывая соединение; выйти можно командой /leave
+    val activity = LocalContext.current as? Activity
+    BackHandler { activity?.moveTaskToBack(true) }
     LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
     LaunchedEffect(Unit) { focus.requestFocus() }
 
@@ -240,6 +246,7 @@ fun MaterialSettingsScreen(vm: ChatViewModel) {
     val p = LocalPalette.current
     val theme by vm.theme.collectAsStateWithLifecycle()
     val fs by vm.fontSize.collectAsStateWithLifecycle()
+    val dynamic by vm.dynamicColors.collectAsStateWithLifecycle()
 
     BackHandler { vm.closeSettings() }
 
@@ -247,6 +254,7 @@ fun MaterialSettingsScreen(vm: ChatViewModel) {
         Text("Настройки", fontSize = 30.sp, color = p.primary)
         Spacer(Modifier.height(24.dp))
 
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
         Column(Modifier.fillMaxWidth().background(p.surfaceHigh, CardShape).padding(20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Тема", color = p.dim, modifier = Modifier.weight(1f))
@@ -255,6 +263,62 @@ fun MaterialSettingsScreen(vm: ChatViewModel) {
                         .clickable { vm.cycleTheme() }
                         .padding(horizontal = 18.dp, vertical = 10.dp)
                 ) { Text(theme.id, color = p.onPrimaryContainer, fontSize = 15.sp) }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Динамические цвета", color = p.dim)
+                    Text(
+                        if (dynamicColorsSupported) "Цвета из обоев (Monet), только для тем md3e"
+                        else "Недоступно: нужен Android 12+",
+                        color = p.dim.copy(alpha = 0.7f), fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                MdSwitch(checked = dynamic, enabled = dynamicColorsSupported) { vm.setDynamicColors(it) }
+            }
+            Spacer(Modifier.height(16.dp))
+            val ctx = LocalContext.current
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Работа в фоне", color = p.dim)
+                    Text(
+                        "Разрешите работу без ограничений, чтобы соединение не рвалось при выключенном экране",
+                        color = p.dim.copy(alpha = 0.7f), fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Box(
+                    Modifier.clip(CircleShape).background(p.primaryContainer)
+                        .clickable { openBatterySettings(ctx) }
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                ) { Text("Батарея", color = p.onPrimaryContainer, fontSize = 15.sp) }
+            }
+            Spacer(Modifier.height(16.dp))
+            val save by vm.saveHistory.collectAsStateWithLifecycle()
+            var info by remember { mutableStateOf(vm.historyInfo()) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Сохранять историю", color = p.dim)
+                    Text(
+                        "Чат записывается в .md-файл на устройстве · $info",
+                        color = p.dim.copy(alpha = 0.7f), fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                MdSwitch(checked = save) { vm.setSaveHistory(it) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Экспорт в .md", color = p.dim, modifier = Modifier.weight(1f))
+                MdChip("Сессия", p.primaryContainer, p.onPrimaryContainer) { vm.exportHistory(false) }
+                Spacer(Modifier.width(8.dp))
+                MdChip("Всё", p.primaryContainer, p.onPrimaryContainer) { vm.exportHistory(true) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Удалить сохранённую историю", color = p.dim, modifier = Modifier.weight(1f))
+                MdChip("Удалить", p.errContainer, p.err) { vm.clearHistory(); info = vm.historyInfo() }
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -276,8 +340,8 @@ fun MaterialSettingsScreen(vm: ChatViewModel) {
             }
         }
 
-        Spacer(Modifier.weight(1f))
-        Text("/theme — быстро сменить тему, /leave — на главный экран", color = p.dim, fontSize = 13.sp)
+        }
+        Text("/theme, /export, /leave — команды чата (/help)", color = p.dim, fontSize = 13.sp)
         Spacer(Modifier.height(12.dp))
         MdButton("Назад", p.primary, p.onPrimary) { vm.closeSettings() }
     }
@@ -290,4 +354,30 @@ private fun RoundIcon(symbol: String, onClick: () -> Unit) {
         Modifier.size(40.dp).clip(CircleShape).background(p.primaryContainer).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(symbol, color = p.onPrimaryContainer, fontSize = 20.sp) }
+}
+
+@Composable
+private fun MdSwitch(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    val p = LocalPalette.current
+    Box(
+        Modifier.size(width = 52.dp, height = 32.dp).clip(CircleShape)
+            .background((if (checked) p.primary else p.bg).copy(alpha = if (enabled) 1f else 0.5f))
+            .border(2.dp, if (checked) Color.Transparent else p.dim, CircleShape)
+            .clickable(enabled = enabled) { onChange(!checked) },
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier.padding(horizontal = if (checked) 4.dp else 6.dp)
+                .size(if (checked) 24.dp else 16.dp).clip(CircleShape)
+                .background(if (checked) p.onPrimary else p.dim)
+        )
+    }
+}
+
+@Composable
+private fun MdChip(text: String, container: Color, content: Color, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(CircleShape).background(container).clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) { Text(text, color = content, fontSize = 14.sp) }
 }

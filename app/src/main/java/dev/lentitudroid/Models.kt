@@ -23,4 +23,11 @@ sealed interface Line {
     data class Error(val text: String) : Line
 }
 
-enum class Phase { Idle, Connecting, Connected }
+/** Reconnecting — соединение потеряно, идёт автоматическое переподключение (чат остаётся открытым). */
+enum class Phase { Idle, Connecting, Connected, Reconnecting }
+
+/** Разовые события для Activity (диалог сохранения файла, всплывающие подсказки). */
+sealed interface UiEvent {
+    data class Export(val fileName: String, val content: String) : UiEvent
+    data class Toast(val text: String) : UiEvent
+}

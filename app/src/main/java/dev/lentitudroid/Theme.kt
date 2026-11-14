@@ -1,5 +1,8 @@
 package dev.lentitudroid
 
+import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -104,3 +107,50 @@ enum class AppTheme(val id: String, val palette: Palette) {
 }
 
 val LocalPalette = staticCompositionLocalOf { AppTheme.TUI_DARK.palette }
+
+/** Динамические цвета (Monet) доступны с Android 12. */
+val dynamicColorsSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+/**
+ * Палитра с учётом переключателя «Динамические цвета»: для md3e-тем на Android 12+
+ * берёт цвета из системных ресурсов (подстраиваются под обои), иначе — фиксированную палитру темы.
+ */
+fun resolvePalette(ctx: Context, theme: AppTheme, dynamic: Boolean): Palette {
+    val base = theme.palette
+    if (!dynamic || base.style != UiStyle.Material || !dynamicColorsSupported) return base
+    return dynamicPalette(ctx, base)
+}
+
+@RequiresApi(Build.VERSION_CODES.S)
+private fun dynamicPalette(ctx: Context, base: Palette): Palette {
+    fun c(id: Int) = Color(ctx.getColor(id))
+    return if (base.dark) base.copy(
+        bg = c(android.R.color.system_neutral1_900),
+        fg = c(android.R.color.system_neutral1_100),
+        dim = c(android.R.color.system_neutral2_200),
+        nicks = listOf(
+            c(android.R.color.system_accent1_200), c(android.R.color.system_accent2_200),
+            c(android.R.color.system_accent3_200), c(android.R.color.system_accent1_300),
+            c(android.R.color.system_accent3_300), c(android.R.color.system_accent2_300),
+        ),
+        primary = c(android.R.color.system_accent1_200),
+        onPrimary = c(android.R.color.system_accent1_800),
+        primaryContainer = c(android.R.color.system_accent1_700),
+        onPrimaryContainer = c(android.R.color.system_accent1_100),
+        surfaceHigh = c(android.R.color.system_neutral1_800),
+    ) else base.copy(
+        bg = c(android.R.color.system_neutral1_10),
+        fg = c(android.R.color.system_neutral1_900),
+        dim = c(android.R.color.system_neutral2_700),
+        nicks = listOf(
+            c(android.R.color.system_accent1_700), c(android.R.color.system_accent2_700),
+            c(android.R.color.system_accent3_700), c(android.R.color.system_accent1_500),
+            c(android.R.color.system_accent3_500), c(android.R.color.system_accent2_500),
+        ),
+        primary = c(android.R.color.system_accent1_600),
+        onPrimary = c(android.R.color.system_accent1_0),
+        primaryContainer = c(android.R.color.system_accent1_100),
+        onPrimaryContainer = c(android.R.color.system_accent1_900),
+        surfaceHigh = c(android.R.color.system_neutral2_100),
+    )
+}

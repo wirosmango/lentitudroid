@@ -1,12 +1,17 @@
 package dev.lentitudroid
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.graphics.Typeface
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,6 +26,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -40,6 +46,14 @@ fun loadMono(ctx: Context): FontFamily = try {
     FontFamily(Typeface.createFromAsset(ctx.assets, "fonts/CascadiaCode.ttf"))
 } catch (e: Exception) {
     FontFamily.Monospace
+}
+
+/** Открывает системный список «Оптимизация батареи», где можно разрешить приложению работать в фоне без ограничений. */
+internal fun openBatterySettings(ctx: Context) {
+    try {
+        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    } catch (_: Exception) {
+    }
 }
 
 /** Cascadia Code для всего приложения: все Text берут шрифт отсюда. */
@@ -188,7 +202,9 @@ private fun TerminalChatScreen(vm: ChatViewModel) {
     val focus = remember { FocusRequester() }
     val style = TextStyle(color = p.fg, fontFamily = mono, fontSize = fs.sp)
 
-    BackHandler { vm.disconnect() }
+    // «Назад» сворачивает приложение, не разрывая соединение; выйти можно командой /leave
+    val activity = LocalContext.current as? Activity
+    BackHandler { activity?.moveTaskToBack(true) }
     LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
     LaunchedEffect(Unit) { focus.requestFocus() }
 
@@ -246,9 +262,41 @@ private fun TerminalSettingsScreen(vm: ChatViewModel) {
         Text("SETTINGS", fontSize = 32.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(32.dp))
 
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
         SettingRow("тема") {
             Text("< ${theme.id} >", modifier = Modifier.clickable { vm.cycleTheme() }.padding(8.dp))
         }
+        val dynamic by vm.dynamicColors.collectAsStateWithLifecycle()
+        SettingRow("палитра md3e") {
+            Text(
+                if (!dynamicColorsSupported) "n/a (Android 12+)" else if (dynamic) "< monet >" else "< фиксированная >",
+                color = if (dynamicColorsSupported) p.fg else p.dim,
+                modifier = Modifier.clickable(enabled = dynamicColorsSupported) { vm.setDynamicColors(!dynamic) }.padding(8.dp),
+            )
+        }
+        val ctx = LocalContext.current
+        SettingRow("работа в фоне") {
+            Text("< батарея >", modifier = Modifier.clickable { openBatterySettings(ctx) }.padding(8.dp))
+        }
+        val save by vm.saveHistory.collectAsStateWithLifecycle()
+        var info by remember { mutableStateOf(vm.historyInfo()) }
+        SettingRow("история .md") {
+            Text(
+                if (save) "< вкл >" else "< выкл >",
+                modifier = Modifier.clickable { vm.setSaveHistory(!save) }.padding(8.dp),
+            )
+        }
+        SettingRow("экспорт") {
+            Text("[сессия]", modifier = Modifier.clickable { vm.exportHistory(false) }.padding(8.dp))
+            Text("[всё]", modifier = Modifier.clickable { vm.exportHistory(true) }.padding(8.dp))
+        }
+        SettingRow("очистить") {
+            Text(
+                "[удалить]", color = p.err,
+                modifier = Modifier.clickable { vm.clearHistory(); info = vm.historyInfo() }.padding(8.dp),
+            )
+        }
+        Text(info, color = p.dim, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
         SettingRow("размер текста") {
             Text("[-]", modifier = Modifier.clickable { vm.setFontSize(fs - 1) }.padding(8.dp))
             Text("$fs")
@@ -268,8 +316,8 @@ private fun TerminalSettingsScreen(vm: ChatViewModel) {
             Text("other@lentitud как дела?", fontSize = fs.sp)
         }
 
-        Spacer(Modifier.weight(1f))
-        Text("/theme — быстро сменить тему, /leave — на главный экран", color = p.dim, fontSize = 13.sp)
+        }
+        Text("/theme, /export, /leave — команды чата (/help)", color = p.dim, fontSize = 13.sp)
         Spacer(Modifier.height(12.dp))
         Row(
             Modifier.fillMaxWidth().background(p.fg).clickable { vm.closeSettings() }.padding(vertical = 20.dp),
